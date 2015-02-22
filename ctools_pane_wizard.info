@@ -1,0 +1,6 @@
+name = CTools pane wizard
+description = Easily configurable flexible ctools panes.
+core = 7.x
+package = Chaos tool suite
+
+dependencies[] = ctools

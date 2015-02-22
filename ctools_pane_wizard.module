@@ -1,0 +1,54 @@
+<?php
+/**
+ * @file
+ * Hooks and callbacks.
+ */
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function ctools_pane_wizard_ctools_plugin_directory($owner, $plugin_type) {
+  if ($owner == 'ctools' && $plugin_type == 'content_types') {
+    return 'plugins/content_types';
+  }
+}
+
+/**
+ * Implements hook_permission().
+ */
+function ctools_pane_wizard_permission() {
+  $items = array();
+
+  $items['ctools_pane_wizard edit pane template'] = array(
+    'title' => t('Edit pane template'),
+    'description' => t('Whether template edit step is accessible.'),
+  );
+
+  $items['ctools_pane_wizard configure pane fields'] = array(
+    'title' => t('Configure pane fields'),
+    'description' => t('Whether field config step is accessible.'),
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function ctools_pane_wizard_theme(&$theme, $plugin) {
+  return array(
+    'universal_pane_render_template' => array(
+      'variables' => array(
+        'field_settings' => array(),
+        'field_values' => array(),
+        'template' => '',
+        'template_format' => '',
+      ),
+      'file' => 'ctools_pane_wizard.theme.inc',
+    ),
+    'universal_pane_fields_table' => array(
+      'render element' => 'container',
+      'file' => 'ctools_pane_wizard.theme.inc',
+    ),
+  );
+}
