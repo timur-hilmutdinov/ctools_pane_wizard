@@ -51,19 +51,21 @@ function universal_pane_settings_form($form, &$form_state) {
   // Validate and submit callbacks for 'Save' button.
   $form['buttons']['finish']['#validate'][] = 'universal_pane_settings_validate';
   $form['buttons']['finish']['#submit'][] = 'universal_pane_settings_submit';
-  $form['buttons']['fields'] = array(
+  $form['buttons']['step_fields'] = array(
     '#type' => 'submit',
     '#value' => t('Fields'),
     '#submit' => array('universal_pane_step_switch'),
+    '#access' => user_access('ctools_pane_wizard configure pane fields'),
     '#weight' => -15,
   );
-  $form['buttons']['template'] = array(
+  $form['buttons']['step_template'] = array(
     '#type' => 'submit',
     '#value' => t('Template'),
     '#submit' => array('universal_pane_step_switch'),
+    '#access' => user_access('ctools_pane_wizard edit pane template'),
     '#weight' => -10,
   );
-  $form['buttons']['values'] = array(
+  $form['buttons']['step_values'] = array(
     '#type' => 'submit',
     '#value' => t('Values'),
     '#submit' => array('universal_pane_step_switch'),
@@ -78,7 +80,7 @@ function universal_pane_settings_form($form, &$form_state) {
   }
   else {
     if (empty($conf['fields'])) {
-      $step = 'fields';
+      $step = 'step_fields';
     }
   }
   $form['buttons'][$step]['#attributes']['class'][] = 'active';
@@ -91,6 +93,17 @@ function universal_pane_settings_form($form, &$form_state) {
  * Pane settings form step switcher.
  */
 function universal_pane_step_switch($form, &$form_state) {
+  // Commit possible changes to config.
+  $values = $form_state['values'];
+  if (isset($values['fields'])) {
+    $fields = $values['fields'];
+    unset($fields['universal_pane_new_field']);
+    $form_state['temp_conf']['fields'] = $fields;
+  }
+  if (isset($values['template'])) {
+    $form_state['temp_conf']['template'] = $values['template'];
+  }
+
   $form_state['rebuild'] = TRUE;
   $form_state['pane_inner_step'] = end($form_state['clicked_button']['#parents']);
 }
@@ -98,14 +111,14 @@ function universal_pane_step_switch($form, &$form_state) {
 /**
  * Pane field values config.
  */
-function universal_pane_settings_values($form, &$form_state) {
+function universal_pane_settings_step_values($form, &$form_state) {
   return $form;
 }
 
 /**
  * Pane field config.
  */
-function universal_pane_settings_fields($form, &$form_state) {
+function universal_pane_settings_step_fields($form, &$form_state) {
   $conf = $form_state['temp_conf'];
 
   $acceptable_fields = universal_pane_field_list();
@@ -296,19 +309,33 @@ function universal_pane_settings_fields_add_field_submit($form, &$form_state) {
   unset($form_state['input']['fields']['universal_pane_new_field']);
 
   $form_state['rebuild'] = TRUE;
-  $form_state['pane_inner_step'] = 'fields';
+  $form_state['pane_inner_step'] = 'step_fields';
 }
 
 /**
  * Pane template config.
  */
-function universal_pane_settings_template($form, &$form_state) {
+function universal_pane_settings_step_template($form, &$form_state) {
   $conf = $form_state['temp_conf'];
+
+  $tokens = array(
+    'title' => '',
+    'type' => 'ul',
+    'items' => array(),
+  );
+  foreach ($conf['fields'] as $machine_name => $info) {
+    $tokens['items'][] = t('%!machine_name - field named "%label"', array(
+      '!machine_name' => $machine_name,
+      '%label' => $info['label'],
+    ));
+  }
 
   $form['template'] = array(
     '#type' => 'textarea',
     '#title' => t('Template markup'),
-    '#description' => t('You may use values of defined fields with tokens.'),
+    '#description' => t("You may use values of defined fields by following tokens: \n !token_list", array(
+      '!token_list' => theme('item_list', $tokens),
+    )),
     '#default_value' => empty($conf['template']) ? '' : $conf['template'],
   );
 
