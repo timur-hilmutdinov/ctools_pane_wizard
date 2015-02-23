@@ -29,7 +29,9 @@ function universal_pane_render($subtype, $conf, $panel_args, $contexts) {
 
   $pane->content = array(
     '#theme' => 'universal_pane_render_template',
-    '#values' => $conf,
+    '#field_settings' => $conf['fields'],
+    '#template' => $conf['template'],
+    '#field_values' => $conf['field_values'],
   );
 
   return $pane;
@@ -47,39 +49,40 @@ function universal_pane_settings_form($form, &$form_state) {
   if (empty($form_state['temp_conf'])) {
     $form_state['temp_conf'] = $form_state['conf'];
   }
+  $temp_conf = $form_state['temp_conf'];
 
   // Validate and submit callbacks for 'Save' button.
-  $form['buttons']['finish']['#validate'][] = 'universal_pane_settings_validate';
-  $form['buttons']['finish']['#submit'][] = 'universal_pane_settings_submit';
+  $form['buttons']['return']['#validate'][] = 'universal_pane_settings_validate';
+  $form['buttons']['return']['#submit'][] = 'universal_pane_settings_submit';
   $form['buttons']['step_fields'] = array(
     '#type' => 'submit',
     '#value' => t('Fields'),
-    '#submit' => array('universal_pane_step_switch'),
+    '#submit' => array('universal_pane_values_commit', 'universal_pane_step_switch'),
     '#access' => user_access('ctools_pane_wizard configure pane fields'),
     '#weight' => -15,
   );
   $form['buttons']['step_template'] = array(
     '#type' => 'submit',
     '#value' => t('Template'),
-    '#submit' => array('universal_pane_step_switch'),
+    '#submit' => array('universal_pane_values_commit', 'universal_pane_step_switch'),
     '#access' => user_access('ctools_pane_wizard edit pane template'),
     '#weight' => -10,
   );
   $form['buttons']['step_values'] = array(
     '#type' => 'submit',
     '#value' => t('Values'),
-    '#submit' => array('universal_pane_step_switch'),
+    '#submit' => array('universal_pane_values_commit', 'universal_pane_step_switch'),
     '#weight' => -5,
   );
   $form['buttons']['#weight'] = -20;
 
   // Determine step.
-  $step = 'values';
+  $step = 'step_values';
   if (!empty($form_state['pane_inner_step'])) {
     $step = $form_state['pane_inner_step'];
   }
   else {
-    if (empty($conf['fields'])) {
+    if (empty($temp_conf['fields'])) {
       $step = 'step_fields';
     }
   }
@@ -90,20 +93,37 @@ function universal_pane_settings_form($form, &$form_state) {
 }
 
 /**
- * Pane settings form step switcher.
+ * Commit possible changes to config.
  */
-function universal_pane_step_switch($form, &$form_state) {
-  // Commit possible changes to config.
+function universal_pane_values_commit($form, &$form_state) {
   $values = $form_state['values'];
+  $temp_conf = &$form_state['temp_conf'];
   if (isset($values['fields'])) {
     $fields = $values['fields'];
     unset($fields['universal_pane_new_field']);
-    $form_state['temp_conf']['fields'] = $fields;
+    foreach ($fields as $key => $field) {
+      $temp_conf['fields'][$key]['label'] = $field['label'];
+      $temp_conf['fields'][$key]['format'] = $field['format'];
+      $temp_conf['fields'][$key]['required'] = $field['required'];
+    }
   }
   if (isset($values['template'])) {
-    $form_state['temp_conf']['template'] = $values['template'];
+    $temp_conf['template'] = $values['template'];
   }
+  if (isset($values['field_values'])) {
+    foreach ($values['field_values'] as $key => $value) {
+      // Separate save callback for each value type
+      // since result structure may differ.
+      $function = 'universal_pane_field_save_' . $temp_conf['fields'][$key]['type'];
+      $temp_conf['field_values'][$key] = $function($value);
+    }
+  }
+}
 
+/**
+ * Pane settings form step switcher.
+ */
+function universal_pane_step_switch($form, &$form_state) {
   $form_state['rebuild'] = TRUE;
   $form_state['pane_inner_step'] = end($form_state['clicked_button']['#parents']);
 }
@@ -112,14 +132,140 @@ function universal_pane_step_switch($form, &$form_state) {
  * Pane field values config.
  */
 function universal_pane_settings_step_values($form, &$form_state) {
+  $temp_conf = $form_state['temp_conf'];
+  $form['field_values'] = array(
+    '#type' => 'container',
+    '#tree' => TRUE,
+  );
+  foreach ($temp_conf['fields'] as $machine_name => $info) {
+    $callback = 'universal_pane_field_widget_' . $info['type'];
+    $field = $callback($info);
+
+    $field['#required'] = $info['required'] && !user_access('');
+    $field['#title'] = $info['label'];
+    $field['#default_value'] = !empty($temp_conf['field_values'][$machine_name]) ? $temp_conf['field_values'][$machine_name] : NULL;
+
+    $form['field_values'][$machine_name] = $field;
+
+  }
   return $form;
+}
+
+/**
+ * Generate renderable array for text field widget.
+ *
+ * @param array $info
+ *   Field config.
+ *
+ * @return array
+ *   Basic setup of field widget.
+ */
+function universal_pane_field_widget_textfield($info) {
+  $field = array(
+    '#type' => 'textfield',
+  );
+  return $field;
+}
+
+/**
+ * Process textfield value before save.
+ *
+ * @param string $value
+ *   Value from form_state.
+ *
+ * @return string
+ *   Processed value.
+ */
+function universal_pane_field_save_textfield($value) {
+  return $value;
+}
+
+/**
+ * Generate renderable array for textarea field widget.
+ *
+ * @param array $info
+ *   Field config.
+ *
+ * @return array
+ *   Basic setup of field widget.
+ */
+function universal_pane_field_widget_textarea($info) {
+  $field = array(
+    '#type' => 'text_format',
+    '#base_type' => 'textarea',
+    '#format' => $info['format'],
+    '#after_build' => array('universal_pane_field_widget_textarea_after_build'),
+  );
+  return $field;
+}
+
+/**
+ * Process textarea value before save.
+ *
+ * @param array $value
+ *   Value from form_state.
+ *
+ * @return string
+ *   Processed value.
+ */
+function universal_pane_field_save_textarea($value) {
+  return $value['value'];
+}
+
+/**
+ * Generate renderable array for image field widget.
+ *
+ * @param array $info
+ *   Field config.
+ *
+ * @return array
+ *   Basic setup of field widget.
+ */
+function universal_pane_field_widget_image($info) {
+  $field = array(
+    '#type' => 'managed_file',
+    '#upload_location' => 'public://',
+    '#upload_validators' => array(
+      'file_validate_size' => array(1048576),
+      'file_validate_extensions' => array('png gif jpg jpeg'),
+    ),
+  );
+  return $field;
+}
+
+/**
+ * Process image value before save.
+ *
+ * @param int $value
+ *   Value from form_state.
+ *
+ * @return string
+ *   Processed value.
+ */
+function universal_pane_field_save_image($value) {
+  // @todo: don't forget to make file permanent on submit.
+  return $value;
+}
+
+/**
+ * After build callback for textarea, hide format selection.
+ */
+function universal_pane_field_widget_textarea_after_build($element, $form_state) {
+  // Check whether format element group is already added.
+  if (!empty($element['format'])) {
+    $element['format']['format']['#title_display'] = 'invisible';
+    $element['format']['format']['#attributes']['style'][] = 'display: none;';
+    // Remove all formats but selected one.
+    $element['format']['format']['#options'] = array_intersect_key($element['format']['format']['#options'], array($element['#format'] => ''));
+  }
+  return $element;
 }
 
 /**
  * Pane field config.
  */
 function universal_pane_settings_step_fields($form, &$form_state) {
-  $conf = $form_state['temp_conf'];
+  $temp_conf = $form_state['temp_conf'];
 
   $acceptable_fields = universal_pane_field_list();
   $types = array();
@@ -144,8 +290,8 @@ function universal_pane_settings_step_fields($form, &$form_state) {
     ),
   );
 
-  if (!empty($conf['fields'])) {
-    foreach ($conf['fields'] as $machine_name => $info) {
+  if (!empty($temp_conf['fields'])) {
+    foreach ($temp_conf['fields'] as $machine_name => $info) {
       $form['fields'][$machine_name]['label'] = array(
         '#type' => 'textfield',
         '#default_value' => $info['label'],
@@ -232,7 +378,7 @@ function universal_pane_settings_step_fields($form, &$form_state) {
 function universal_pane_field_list() {
   $fields = array();
   $fields['textfield'] = array(
-    'title' => t('Textfield'),
+    'title' => t('Text'),
     'formats' => array(
       'text' => t('Text field'),
     ),
@@ -242,7 +388,7 @@ function universal_pane_field_list() {
     $text_formats[$machine_name] = $info->name;
   }
   $fields['textarea'] = array(
-    'title' => t('Textarea'),
+    'title' => t('Long text'),
     'formats' => $text_formats,
   );
 
@@ -316,15 +462,15 @@ function universal_pane_settings_fields_add_field_submit($form, &$form_state) {
  * Pane template config.
  */
 function universal_pane_settings_step_template($form, &$form_state) {
-  $conf = $form_state['temp_conf'];
+  $temp_conf = $form_state['temp_conf'];
 
   $tokens = array(
     'title' => '',
     'type' => 'ul',
     'items' => array(),
   );
-  foreach ($conf['fields'] as $machine_name => $info) {
-    $tokens['items'][] = t('%!machine_name - field named "%label"', array(
+  foreach ($temp_conf['fields'] as $machine_name => $info) {
+    $tokens['items'][] = t('!!machine_name - field named "%label"', array(
       '!machine_name' => $machine_name,
       '%label' => $info['label'],
     ));
@@ -336,7 +482,7 @@ function universal_pane_settings_step_template($form, &$form_state) {
     '#description' => t("You may use values of defined fields by following tokens: \n !token_list", array(
       '!token_list' => theme('item_list', $tokens),
     )),
-    '#default_value' => empty($conf['template']) ? '' : $conf['template'],
+    '#default_value' => empty($temp_conf['template']) ? '' : $temp_conf['template'],
   );
 
   return $form;
@@ -346,7 +492,14 @@ function universal_pane_settings_step_template($form, &$form_state) {
  * Validate callback for all pane settings.
  */
 function universal_pane_settings_validate($form, &$form_state) {
-
+  universal_pane_values_commit($form, $form_state);
+  $temp_conf = $form_state['temp_conf'];
+  if (empty($temp_conf['template'])) {
+    form_set_error('buttons][step_template', t('Template can not be empty.'));
+  }
+  if (empty($temp_conf['fields'])) {
+    form_set_error('buttons][step_fields', t('At least one field should be given.'));
+  }
 }
 
 /**

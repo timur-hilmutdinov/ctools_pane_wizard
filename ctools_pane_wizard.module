@@ -29,6 +29,11 @@ function ctools_pane_wizard_permission() {
     'description' => t('Whether field config step is accessible.'),
   );
 
+  $items['ctools_pane_wizard ignore required fields'] = array(
+    'title' => t('Ignore required fields'),
+    'description' => t('For site builders purpose.'),
+  );
+
   return $items;
 }
 
@@ -42,7 +47,6 @@ function ctools_pane_wizard_theme(&$theme, $plugin) {
         'field_settings' => array(),
         'field_values' => array(),
         'template' => '',
-        'template_format' => '',
       ),
       'file' => 'ctools_pane_wizard.theme.inc',
     ),
