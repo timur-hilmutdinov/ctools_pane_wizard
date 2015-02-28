@@ -41,6 +41,11 @@ function universal_pane_render($subtype, $conf, $panel_args, $contexts) {
  * Pane settings form callback.
  */
 function universal_pane_settings_form($form, &$form_state) {
+  // This line removes errors upon file upload.
+  // @see http://drupal.stackexchange.com/questions/59467/ctools-custom-content-type-plugin-with-image-field
+  // @see http://drupal.stackexchange.com/questions/39818/ajax-calls-in-ctools-content-type-plugin/126994#126994
+  ctools_form_include($form_state, 'universal_pane', 'ctools_pane_wizard', 'plugins/content_types');
+
   // Hide redundant elements like 'override title'.
   foreach (element_children($form) as $key) {
     $form[$key]['#access'] = $key == 'buttons';
@@ -54,24 +59,27 @@ function universal_pane_settings_form($form, &$form_state) {
   // Validate and submit callbacks for 'Save' button.
   $form['buttons']['return']['#validate'][] = 'universal_pane_settings_validate';
   $form['buttons']['return']['#submit'][] = 'universal_pane_settings_submit';
+  $access_fields = user_access('ctools_pane_wizard configure pane fields');
+  $access_template = user_access('ctools_pane_wizard edit pane template');
   $form['buttons']['step_fields'] = array(
     '#type' => 'submit',
     '#value' => t('Fields'),
     '#submit' => array('universal_pane_values_commit', 'universal_pane_step_switch'),
-    '#access' => user_access('ctools_pane_wizard configure pane fields'),
+    '#access' => $access_fields,
     '#weight' => -15,
   );
   $form['buttons']['step_template'] = array(
     '#type' => 'submit',
     '#value' => t('Template'),
     '#submit' => array('universal_pane_values_commit', 'universal_pane_step_switch'),
-    '#access' => user_access('ctools_pane_wizard edit pane template'),
+    '#access' => $access_template,
     '#weight' => -10,
   );
   $form['buttons']['step_values'] = array(
     '#type' => 'submit',
     '#value' => t('Values'),
     '#submit' => array('universal_pane_values_commit', 'universal_pane_step_switch'),
+    '#access' => $access_fields || $access_template,
     '#weight' => -5,
   );
   $form['buttons']['#weight'] = -20;
@@ -226,7 +234,7 @@ function universal_pane_field_widget_image($info) {
     '#type' => 'managed_file',
     '#upload_location' => 'public://',
     '#upload_validators' => array(
-      'file_validate_size' => array(1048576),
+      'file_validate_size' => array(20971520),
       'file_validate_extensions' => array('png gif jpg jpeg'),
     ),
   );
@@ -243,7 +251,6 @@ function universal_pane_field_widget_image($info) {
  *   Processed value.
  */
 function universal_pane_field_save_image($value) {
-  // @todo: don't forget to make file permanent on submit.
   return $value;
 }
 
@@ -410,7 +417,7 @@ function universal_pane_field_list() {
  * Check if field's machine-name is unique.
  */
 function universal_pane_machine_name_check($name, $element, $form_state) {
-  return FALSE;
+  return array_key_exists($name, $form_state['temp_conf']['fields']);
 }
 
 /**
@@ -507,4 +514,11 @@ function universal_pane_settings_validate($form, &$form_state) {
  */
 function universal_pane_settings_submit($form, &$form_state) {
   $form_state['conf'] = $form_state['temp_conf'];
+  foreach ($form_state['conf']['fields'] as $key => $info) {
+    if ($info['type'] == 'image' && !empty($form_state['conf']['field_values'][$key])) {
+      $file = file_load($form_state['conf']['field_values'][$key]);
+      global $user;
+      file_usage_add($file, 'ctools_pane_wizard', 'user', $user->uid);
+    }
+  }
 }
