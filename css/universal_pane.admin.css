@@ -1,0 +1,7 @@
+.form-submit.active {
+    border-color: #6fcda1;
+}
+
+.form-submit.error {
+    border-color: red;
+}

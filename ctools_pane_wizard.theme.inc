@@ -9,10 +9,31 @@
  */
 function theme_universal_pane_render_template($variables) {
   $tokens = array();
+
   foreach ($variables['field_values'] as $key => $value) {
     $render_callback = 'universal_pane_render_' . $variables['field_settings'][$key]['type'];
     $tokens["!$key"] = $render_callback($value, $variables['field_settings'][$key]);
   }
+
+  return format_string($variables['template'], $tokens);
+}
+
+/**
+ * Theme callback for pane content.
+ */
+function theme_universal_pane_render_template_preview($variables) {
+  $tokens = array();
+
+  foreach ($variables['field_values'] as $key => $value) {
+    if ($variables['field_settings'][$key]['type'] != 'image') {
+      $render_callback = 'universal_pane_render_' . $variables['field_settings'][$key]['type'];
+      $tokens["!$key"] = $render_callback($value, $variables['field_settings'][$key]);
+    }
+    else {
+      $tokens["!$key"] = t('Image placeholder');
+    }
+  }
+
   return format_string($variables['template'], $tokens);
 }
 
@@ -42,7 +63,8 @@ function theme_universal_pane_fields_table(&$variables) {
     'header' => $container['#header'],
     'rows' => $rows,
     'empty' => t('No fields currently exist.'),
-    'attributes' => array('id' => 'field-overview'))) . drupal_render_children($container);
+    'attributes' => array('id' => 'field-overview'),
+  )) . drupal_render_children($container);
 }
 
 /**
@@ -104,5 +126,6 @@ function universal_pane_render_image($fid, $config) {
       $variables['style_name'] = $config['format'];
       break;
   }
+
   return theme($hook, $variables);
 }

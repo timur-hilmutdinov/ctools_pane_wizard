@@ -50,6 +50,14 @@ function ctools_pane_wizard_theme(&$theme, $plugin) {
       ),
       'file' => 'ctools_pane_wizard.theme.inc',
     ),
+    'universal_pane_render_template_preview' => array(
+      'variables' => array(
+        'field_settings' => array(),
+        'field_values' => array(),
+        'template' => '',
+      ),
+      'file' => 'ctools_pane_wizard.theme.inc',
+    ),
     'universal_pane_fields_table' => array(
       'render element' => 'container',
       'file' => 'ctools_pane_wizard.theme.inc',
