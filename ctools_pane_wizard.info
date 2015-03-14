@@ -4,3 +4,7 @@ core = 7.x
 package = Chaos tool suite
 
 dependencies[] = ctools
+dependencies[] = field
+dependencies[] = field_ui
+dependencies[] = image
+dependencies[] = text

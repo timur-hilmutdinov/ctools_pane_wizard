@@ -57,6 +57,7 @@ function universal_pane_admin_title($subtype, $conf) {
 function universal_pane_admin_info($subtype, $conf) {
   $output = new stdClass();
   $output->title = t('Preview content');
+
   $output->content = theme('universal_pane_render_template_preview', array(
     'field_settings' => $conf['fields'],
     'field_values' => $conf['field_values'],
@@ -94,12 +95,14 @@ function universal_pane_settings_form($form, &$form_state) {
   // @see http://drupal.stackexchange.com/questions/59467/ctools-custom-content-type-plugin-with-image-field
   // @see http://drupal.stackexchange.com/questions/39818/ajax-calls-in-ctools-content-type-plugin/126994#126994
   ctools_form_include($form_state, 'universal_pane', 'ctools_pane_wizard', 'plugins/content_types');
+
   $form['#attached']['css'][] = drupal_get_path('module', 'ctools_pane_wizard') . '/css/universal_pane.admin.css';
 
   // Hide redundant elements like 'override title'.
   foreach (element_children($form) as $key) {
     $form[$key]['#access'] = $key == 'buttons';
   }
+
   // Initialize temporary config from original one.
   if (empty($form_state['temp_conf'])) {
     $form_state['temp_conf'] = $form_state['conf'];
@@ -109,8 +112,13 @@ function universal_pane_settings_form($form, &$form_state) {
   // Validate and submit callbacks for 'Save' button.
   $form['buttons']['return']['#validate'][] = 'universal_pane_settings_validate';
   $form['buttons']['return']['#submit'][] = 'universal_pane_settings_submit';
+  $form['buttons']['#weight'] = 100;
+
+  // Put buttons permission into variables to avoid redundant calls.
   $access_fields = user_access('ctools_pane_wizard configure pane fields');
   $access_template = user_access('ctools_pane_wizard edit pane template');
+
+  // Populate step buttons.
   $form['steps'] = array(
     '#type' => 'container',
     '#access' => $access_fields || $access_template,
@@ -143,7 +151,6 @@ function universal_pane_settings_form($form, &$form_state) {
     '#weight' => -5,
   );
   $form['steps']['#weight'] = -20;
-  $form['buttons']['#weight'] = 100;
 
   // Determine step.
   $step = 'step_values';
@@ -158,12 +165,12 @@ function universal_pane_settings_form($form, &$form_state) {
   $form['steps'][$step]['#attributes']['class'][] = 'active';
   $function = 'universal_pane_settings_' . $step;
 
+  // Update pane title.
   $step_titles = array(
     'step_fields' => t('fields'),
     'step_values' => t('values'),
     'step_template' => t('template'),
   );
-
   $admin_title = empty($temp_conf['admin_title']) ? $form_state['plugin']['title'] : $temp_conf['admin_title'];
   $form_state['title'] = t('Configure %title !step.', array(
     '%title' => $admin_title,
@@ -175,10 +182,14 @@ function universal_pane_settings_form($form, &$form_state) {
 
 /**
  * Commit possible changes to config.
+ *
+ * Handles all possible steps.
  */
 function universal_pane_values_commit($form, &$form_state) {
   $values = $form_state['values'];
   $temp_conf = &$form_state['temp_conf'];
+
+  // Fields step.
   if (isset($values['fields'])) {
     $fields = $values['fields'];
     unset($fields['universal_pane_new_field']);
@@ -194,9 +205,13 @@ function universal_pane_values_commit($form, &$form_state) {
   if (isset($values['delta'])) {
     $temp_conf['delta'] = $values['delta'];
   }
+
+  // Template step.
   if (isset($values['template'])) {
     $temp_conf['template'] = $values['template'];
   }
+
+  // Values step.
   if (isset($values['field_values'])) {
     foreach ($values['field_values'] as $key => $value) {
       // Separate save callback for each value type
@@ -220,25 +235,26 @@ function universal_pane_step_switch($form, &$form_state) {
  */
 function universal_pane_settings_step_values($form, &$form_state) {
   $temp_conf = $form_state['temp_conf'];
-  $form['field_values'] = array(
-    '#type' => 'container',
-    '#tree' => TRUE,
-  );
 
   if (empty($temp_conf['fields'])) {
     drupal_set_message(t('No fields added yet. Proceed to %fields step.', array('%fields' => t('Fields'))), 'error');
   }
   else {
+    $form['field_values'] = array(
+      '#type' => 'container',
+      '#tree' => TRUE,
+    );
+
     foreach ($temp_conf['fields'] as $machine_name => $info) {
       $callback = 'universal_pane_field_widget_' . $info['type'];
       $field = $callback($info);
 
-      $field['#required'] = $info['required'] && !user_access('');
+      // Allow not to fill required fields during pane development.
+      $field['#required'] = $info['required'] && !user_access('ctools_pane_wizard ignore required fields');
       $field['#title'] = $info['label'];
       $field['#default_value'] = !empty($temp_conf['field_values'][$machine_name]) ? $temp_conf['field_values'][$machine_name] : NULL;
 
       $form['field_values'][$machine_name] = $field;
-
     }
   }
 
@@ -320,9 +336,9 @@ function universal_pane_field_save_textarea($value) {
 function universal_pane_field_widget_image($info) {
   $field = array(
     '#type' => 'managed_file',
-    '#upload_location' => 'public://',
+    '#upload_location' => file_default_scheme() . '://',
     '#upload_validators' => array(
-      'file_validate_size' => array(20971520),
+      'file_validate_size' => array(parse_size(file_upload_max_size())),
       'file_validate_extensions' => array('png gif jpg jpeg'),
     ),
   );
@@ -351,6 +367,7 @@ function universal_pane_field_widget_textarea_after_build($element, $form_state)
   if (!empty($element['format'])) {
     $element['format']['format']['#title_display'] = 'invisible';
     $element['format']['format']['#attributes']['style'][] = 'display: none;';
+
     // Remove all formats except selected one.
     $element['format']['format']['#options'] = array_intersect_key($element['format']['format']['#options'], array($element['#format'] => ''));
   }
@@ -364,13 +381,13 @@ function universal_pane_field_widget_textarea_after_build($element, $form_state)
 function universal_pane_settings_step_fields($form, &$form_state) {
   $temp_conf = $form_state['temp_conf'];
 
+  // Administrative components.
   $form['admin']['admin_title'] = array(
     '#type' => 'textfield',
     '#title' => t('Administrative title'),
     '#default_value' => $temp_conf['admin_title'],
     '#description' => t('Use this field to modify title displayed on panel overview.<br/> Machine name will be used as pane delta, so it is possible to alter specific pane.'),
   );
-
   $form['admin']['delta'] = array(
     '#type' => 'machine_name',
     '#title' => t('Machine name'),
@@ -412,6 +429,7 @@ function universal_pane_settings_step_fields($form, &$form_state) {
     ),
   );
 
+  // Settings for existing fields.
   if (!empty($temp_conf['fields'])) {
     foreach ($temp_conf['fields'] as $machine_name => $info) {
       $form['fields'][$machine_name]['label'] = array(
@@ -436,6 +454,7 @@ function universal_pane_settings_step_fields($form, &$form_state) {
     }
   }
 
+  // New field settings.
   $form['fields']['universal_pane_new_field'] = array();
   $form['fields']['universal_pane_new_field']['label'] = array(
     '#type' => 'textfield',
@@ -499,12 +518,16 @@ function universal_pane_settings_step_fields($form, &$form_state) {
  */
 function universal_pane_field_list() {
   $fields = array();
+
+  // Single-line text field.
   $fields['textfield'] = array(
     'title' => t('Text'),
     'formats' => array(
       'text' => t('Text field'),
     ),
   );
+
+  // Text area with formatting.
   $text_formats = array();
   foreach (filter_formats() as $machine_name => $info) {
     $text_formats[$machine_name] = $info->name;
@@ -514,6 +537,7 @@ function universal_pane_field_list() {
     'formats' => $text_formats,
   );
 
+  // Image with imagestyle.
   $image_formats = array(
     '_none' => t('Original image'),
   );
@@ -547,6 +571,8 @@ function universal_pane_admin_name_check($name, $element, $form_state) {
  */
 function universal_pane_settings_fields_add_field_validate($form, &$form_state) {
   $new_field = $form_state['values']['fields']['universal_pane_new_field'];
+
+  // Validate field properties.
   $properties = array('label', 'type', 'format');
   foreach ($properties as $key) {
     $parents = array('fields', 'universal_pane_new_field', $key);
@@ -555,7 +581,9 @@ function universal_pane_settings_fields_add_field_validate($form, &$form_state) 
       form_set_error(implode('][', $parents), t('<strong>%field</strong> required.', array('%field' => $form_element['#title'])));
     }
   }
-  // Handle separately since error should be shown when label is filled.
+
+  // Handle machine name separately
+  // since error should be shown when label is filled.
   if (!empty($new_field['label']) && empty($new_field['machine_name'])) {
     $parents = array('fields', 'universal_pane_new_field', 'machine_name');
     $form_element = drupal_array_get_nested_value($form, $parents);
@@ -567,9 +595,9 @@ function universal_pane_settings_fields_add_field_validate($form, &$form_state) 
  * Commit new field to pane config.
  */
 function universal_pane_settings_fields_add_field_submit($form, &$form_state) {
-  $new_field = $form_state['values']['fields']['universal_pane_new_field'];
   $temp_conf = &$form_state['temp_conf'];
 
+  $new_field = $form_state['values']['fields']['universal_pane_new_field'];
   $machine_name = $new_field['machine_name'];
 
   $temp_conf['fields'][$machine_name] = array(
@@ -598,6 +626,8 @@ function universal_pane_settings_step_template($form, &$form_state) {
     'type' => 'ul',
     'items' => array(),
   );
+
+  // Fill tokens based on previously defined fields.
   foreach ($temp_conf['fields'] as $machine_name => $info) {
     $tokens['items'][] = t('!!machine_name - field named "%label"', array(
       '!machine_name' => $machine_name,
@@ -622,11 +652,14 @@ function universal_pane_settings_step_template($form, &$form_state) {
  */
 function universal_pane_settings_validate(&$form, &$form_state) {
   universal_pane_values_commit($form, $form_state);
+
   $temp_conf = $form_state['temp_conf'];
+
   if (empty($temp_conf['template'])) {
     form_set_error('buttons][step_template', t('Template can not be empty.'));
     $form['steps']['step_template']['#attributes']['class'][] = 'error';
   }
+
   if (empty($temp_conf['fields'])) {
     form_set_error('buttons][step_fields', t('At least one field should be added.'));
     $form['steps']['step_fields']['#attributes']['class'][] = 'error';
@@ -637,11 +670,13 @@ function universal_pane_settings_validate(&$form, &$form_state) {
  * Pane config submit callback.
  */
 function universal_pane_settings_submit($form, &$form_state) {
+  global $user;
   $form_state['conf'] = $form_state['temp_conf'];
+
   foreach ($form_state['conf']['fields'] as $key => $info) {
     if ($info['type'] == 'image' && !empty($form_state['conf']['field_values'][$key])) {
+      // Register file usage to make it permanent.
       $file = file_load($form_state['conf']['field_values'][$key]);
-      global $user;
       file_usage_add($file, 'ctools_pane_wizard', 'user', $user->uid);
     }
   }
