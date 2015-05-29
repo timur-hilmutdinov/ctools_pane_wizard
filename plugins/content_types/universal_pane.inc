@@ -24,6 +24,7 @@ function ctools_pane_wizard_universal_pane_ctools_content_types() {
       'fields' => array(),
       'field_values' => array(),
       'template' => '',
+      'use_template_file' => FALSE,
     ),
   );
 }
@@ -58,7 +59,7 @@ function universal_pane_admin_info($subtype, $conf) {
   $output = new stdClass();
   $output->title = t('Preview content');
 
-  $output->content = theme('universal_pane_render_template_preview', array(
+  $output->content = theme('universal_pane_inline_template_preview', array(
     'field_settings' => $conf['fields'],
     'field_values' => $conf['field_values'],
     'template' => $conf['template'],
@@ -75,12 +76,34 @@ function universal_pane_render($subtype, $conf, $panel_args, $contexts) {
   $pane->module = 'ctools_pane_wizard';
   $pane->delta = empty($conf['delta']) ? 'universal_pane' : $conf['delta'];
 
-  $pane->content = array(
-    '#theme' => 'universal_pane_render_template',
-    '#field_settings' => $conf['fields'],
-    '#field_values' => $conf['field_values'],
-    '#template' => $conf['template'],
-  );
+  if ($conf['use_template_file']) {
+    $fields = array();
+
+    foreach ($conf['field_values'] as $key => $value) {
+      $classes = array(
+        'universal-pane-field',
+        'field-' . str_replace('_', '-', $key),
+      );
+      $render_callback = 'universal_pane_render_' . $conf['fields'][$key]['type'];
+      $fields[$key] = new stdClass();
+      $fields[$key]->content = $render_callback($value, $conf['fields'][$key]);
+      $fields[$key]->wrapper_prefix = '<div class="' . implode(' ', $classes) . '">';
+      $fields[$key]->wrapper_suffix = '</div>';
+    }
+
+    $pane->content = array(
+      '#theme' => 'universal_pane',
+      '#fields' => $fields,
+    );
+  }
+  else {
+    $pane->content = array(
+      '#theme' => 'universal_pane_inline_template',
+      '#field_settings' => $conf['fields'],
+      '#field_values' => $conf['field_values'],
+      '#template' => $conf['template'],
+    );
+  }
 
   return $pane;
 }
@@ -209,6 +232,10 @@ function universal_pane_values_commit($form, &$form_state) {
   // Template step.
   if (isset($values['template'])) {
     $temp_conf['template'] = $values['template'];
+  }
+
+  if (isset($values['use_template_file'])) {
+    $temp_conf['use_template_file'] = $values['use_template_file'];
   }
 
   // Values step.
@@ -396,6 +423,7 @@ function universal_pane_settings_step_fields($form, &$form_state) {
       'exists' => 'universal_pane_admin_name_check',
       'source' => array('admin', 'admin_title'),
     ),
+    '#default_value' => $temp_conf['delta'],
     '#required' => FALSE,
   );
 
@@ -635,13 +663,54 @@ function universal_pane_settings_step_template($form, &$form_state) {
     ));
   }
 
+  $form['use_template_file'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Use template file'),
+    '#description' => 'Check to use file instead of inline template.',
+    '#default_value' => $temp_conf['use_template_file'],
+  );
+
+  $delta_suggestion = '';
+  if (!empty($temp_conf['delta'])) {
+    $delta_suggestion = '--' . str_replace('_', '-', $temp_conf['delta']);
+  }
+
+  $form['template_name'] = array(
+    '#type' => 'item',
+    '#title' => t('Template name:'),
+    '#markup' => 'universal-pane' . $delta_suggestion . '.tpl.php',
+    '#prefix' => '<em>',
+    '#suffix' => '</em>',
+    '#states' => array(
+      'invisible' => array(
+        ':input[name="use_template_file"]' => array('checked' => FALSE),
+      ),
+    ),
+  );
+
+  $form['template_default'] = array(
+    '#type' => 'item',
+    '#title' => t('This is the default theme template:'),
+    '#markup' => '<pre>' . check_plain(file_get_contents(drupal_get_path('module', 'ctools_pane_wizard') . '/universal-pane.tpl.php')) . '</pre>',
+    '#states' => array(
+      'invisible' => array(
+        ':input[name="use_template_file"]' => array('checked' => FALSE),
+      ),
+    ),
+  );
+
   $form['template'] = array(
     '#type' => 'textarea',
     '#title' => t('Template markup'),
     '#description' => t("You may use values of defined fields by following tokens: \n !token_list", array(
       '!token_list' => theme('item_list', $tokens),
     )),
-    '#default_value' => empty($temp_conf['template']) ? '' : $temp_conf['template'],
+    '#default_value' => $temp_conf['template'],
+    '#states' => array(
+      'invisible' => array(
+        ':input[name="use_template_file"]' => array('checked' => TRUE),
+      ),
+    ),
   );
 
   return $form;
